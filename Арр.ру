@@ -1,0 +1,52 @@
+from flask import Flask, request
+import telebot
+import requests
+import os
+
+# Токен бота берётся из переменной окружения
+API_TOKEN = os.getenv('API_TOKEN')
+
+# URL Google Apps Script (берёшь из шага 1)
+GOOGLE_SCRIPT_URL = os.getenv('GOOGLE_SCRIPT_URL')
+
+# Создаем экземпляр бота
+bot = telebot.TeleBot(API_TOKEN)
+
+# Создаем Flask-сервер
+server = Flask(__name__)
+
+# Обрабатываем входящие сообщения
+@bot.message_handler(func=lambda m: True)
+def process_message(message):
+    # Проверяем, похож ли текст на email
+    if "@" in message.text:
+        # Отправляем email в Google Apps Script
+        response = requests.post(GOOGLE_SCRIPT_URL, params={'email': message.text})
+        
+        # Отвечаем пользователю
+        if response.status_code == 200:
+            bot.reply_to(message, "Email успешно добавлен!")
+        else:
+            bot.reply_to(message, "Ошибка добавления email.")
+    else:
+        bot.reply_to(message, "Это не похоже на email.")
+
+# Маршрут для приёма Webhook
+@server.route("/" + API_TOKEN, methods=["POST"])
+def receive_update():
+    json_data = request.stream.read().decode("utf-8")
+    update = telebot.types.Update.de_json(json_data)
+    bot.process_new_updates([update])
+    return "OK", 200
+
+# Маршрут для настройки Webhook
+@server.route("/", methods=["GET"])
+def set_webhook():
+    bot.remove_webhook()  # Удаляем старые настройки
+    webhook_url = f"{request.url_root}{API_TOKEN}"  # Формируем URL
+    bot.set_webhook(url=webhook_url)  # Устанавливаем Webhook
+    return "Webhook настроен", 200
+
+# Запуск сервера
+if __name__ == "__main__":
+    server.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
